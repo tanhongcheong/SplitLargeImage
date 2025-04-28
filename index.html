@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<title>Split large image into multiple pages 20250428</title>
+		<script src="https://unpkg.com/jspdf@latest/dist/jspdf.umd.min.js"></script>
+		<!--CSS for loader-->
+		<!--copied from https://www.w3schools.com/howto/howto_css_loader.asp-->
+		<style>
+			.loader {
+			  border: 16px solid #f3f3f3;
+			  border-radius: 50%;
+			  border-top: 16px solid #3498db;
+			  width: 50px;
+			  height: 50px;
+			  -webkit-animation: spin 2s linear infinite; /* Safari */
+			  animation: spin 2s linear infinite;
+			}
+
+			/* Safari */
+			@-webkit-keyframes spin {
+			  0% { -webkit-transform: rotate(0deg); }
+			  100% { -webkit-transform: rotate(360deg); }
+			}
+
+			@keyframes spin {
+			  0% { transform: rotate(0deg); }
+			  100% { transform: rotate(360deg); }
+			}
+		</style>
+		
+		
+		
+		<script>
+			let outputs = new Array();//the canvas that contains the images
+			
+			let paperWidth;
+			let paperHeight;
+			let dpi;
+			let left;
+			let right;
+			let topMarign;
+			let bottom;
+			let dotsPerCM;
+			let horizonalPixelsPerPage;
+			let verticalPixelsPerPage;
+			let reduction;
+			let pagesWide;
+			let pagesTall;
+			let img;
+			
+			async function generateTile(pos)
+			{
+				setTimeout(()=>
+				{
+					console.log("pos="+pos);
+					let previewCanvas = document.getElementById("preview"+pos);
+					if (previewCanvas!=null)
+					{
+						console.log("Generating tile "+pos);
+						let pre = previewCanvas.getContext("2d");
+						pre.fillStyle = "white";
+						pre.fillRect(0, 0, previewCanvas.width, previewCanvas.height);
+						let c = pos%pagesWide*horizonalPixelsPerPage;			//the column in preview
+						let r = Math.floor(pos/pagesWide)*verticalPixelsPerPage;//the row in preview
+						
+						let previewScale = (window.screen.width/pagesWide/(paperWidth*dotsPerCM));
+						pre.drawImage(img, c, r, horizonalPixelsPerPage, verticalPixelsPerPage, left*dotsPerCM*previewScale, topMargin*dotsPerCM*previewScale, horizonalPixelsPerPage*previewScale, verticalPixelsPerPage*previewScale);
+						
+						//generate the images for pdf
+						let outCanvas = document.createElement('canvas');
+						outCanvas.width = paperWidth*dotsPerCM/reduction;
+						outCanvas.height = paperHeight*dotsPerCM/reduction;
+						let out = outCanvas.getContext("2d");
+						out.fillStyle = "white";
+						out.fillRect(0, 0, outCanvas.width, outCanvas.height);
+						out.drawImage(img, c, r, horizonalPixelsPerPage, verticalPixelsPerPage, left*dotsPerCM/reduction, topMargin*dotsPerCM/reduction, horizonalPixelsPerPage/reduction, verticalPixelsPerPage/reduction);
+						
+						let image = outCanvas.toDataURL("image/jpeg", 1);
+						
+						outputs.push(image);
+						
+						
+						
+						generateTile(pos+1);
+					}
+					else
+					{
+						console.log("Finished generating preview.");
+						let preview = document.getElementById("preview");
+						let saveButton = document.createElement('button')
+						saveButton.value = "Save PDF";
+						saveButton.onclick = savePDF;
+						saveButton.type = "button";
+						saveButton.appendChild(document.createTextNode("Save PDF"));
+						preview.appendChild(saveButton);
+						
+						const busy = document.getElementById("busy");
+						busy.style = "display:none";			
+						const input = document.getElementById("input");
+						input.style = "display:block";
+						
+						
+					}
+				},0);
+			}
+			
+			function preview()
+			{
+				var file = document.getElementById("fileInput").files[0];
+				
+				if (file === undefined)
+				{
+					alert("No file selected.");
+					return;
+				}
+				
+				paperWidth = parseFloat(document.getElementById("paperWidth").value);
+				paperHeight = parseFloat(document.getElementById("paperHeight").value);
+				dpi = parseFloat(document.getElementById("DPI").value);
+				left = parseFloat(document.getElementById("leftMargin").value);
+				right = parseFloat(document.getElementById("rightMargin").value);
+				topMargin = parseFloat(document.getElementById("topMargin").value);
+				bottom = parseFloat(document.getElementById("bottomMargin").value);
+				
+				dotsPerCM = dpi/2.54;
+				horizonalPixelsPerPage = Math.floor((paperWidth-left-right)*dotsPerCM);
+				verticalPixelsPerPage = Math.floor((paperHeight-topMargin-bottom)*dotsPerCM);
+				
+				reduction = parseFloat(document.getElementById("reductionFactor").value);
+					
+				const busy = document.getElementById("busy");
+				busy.style = "display:block";			
+				const input = document.getElementById("input");
+				input.style = "display:none";
+				let preview = document.getElementById("preview");
+				//remove old preview
+				while (preview.firstChild)
+				{
+					preview.removeChild(preview.lastChild);
+				}
+				//clear image arrary
+				outputs = [];
+				
+				img = new Image();
+				var URL = window.webkitURL || window.URL;
+				var url = URL.createObjectURL(file);
+				img.src = url;
+				img.onload = async function()
+				{
+					pagesWide = Math.ceil(img.width/horizonalPixelsPerPage);
+					pagesTall =Math.ceil(img.height/verticalPixelsPerPage)
+
+					let total = 0;
+					for(let r=0;r<img.height;r=r+verticalPixelsPerPage)
+					{
+						console.log("r="+r);
+						let row = document.createElement('div')
+						row.style = "display: table-row";
+						preview.appendChild(row);
+						
+						for(let c=0;c<img.width;c=c+horizonalPixelsPerPage)
+						{
+							console.log("\tc="+c);
+							let cell = document.createElement('div')
+							cell.style = "display: table-cell";
+							row.appendChild(cell);
+							
+							let previewCanvas = document.createElement('canvas');
+							let previewScale = (window.screen.width/pagesWide/(paperWidth*dotsPerCM));
+							previewCanvas.id = "preview"+total;
+							previewCanvas.width = paperWidth*dotsPerCM*previewScale;
+							previewCanvas.height = paperHeight*dotsPerCM*previewScale;
+							previewCanvas.style = "border:1px solid #000000;";
+							cell.appendChild(previewCanvas);
+							total++;
+						}
+					}
+					
+					generateTile(0);
+				}
+				
+			}
+			
+			function savePDF()
+			{
+				const paperWidth = parseFloat(document.getElementById("paperWidth").value);
+				const paperHeight = parseFloat(document.getElementById("paperHeight").value);
+				
+				let options = {orientation: 'p',unit: 'mm',format: [Math.round(paperWidth*10),Math.round(paperHeight*10)],compress: true};
+				//cannot seem to make cm work, well.....
+					
+				if (paperWidth>paperHeight)
+				{
+					options["orientation"] = 'l';
+				}
+				var doc = new jspdf.jsPDF(options);
+				
+				for(let i=0;i<outputs.length;i++)
+				{
+					if (i>0)
+					{
+						doc.addPage();
+					}
+					doc.addImage(outputs[i], "JPEG", 0, 0, paperWidth*10,paperHeight*10,"image "+i,"FAST");			
+				}
+				try
+				{
+					doc.save("output.pdf");
+				}
+				catch(e)
+				{
+					console.log("Error");
+					console.log(e);
+					alert(e+" You may want to reduce the source image by increasing reduction factor.");
+				}
+			}
+		</script>
+	</head>
+	<body>
+		<div id="input">
+			<table>
+				<tr>
+					<th>Paper width</th>
+					<td><input type="number" id="paperWidth" name="paperWidth" value="29.7"/> cm</td>
+				</tr>
+				<tr>
+					<th>Paper height</th>
+					<td><input type="number" id="paperHeight" name="paperHeight" value="21.0"/> cm</td>
+				</tr>
+				<tr>
+					<th>Pixel per Inch (DPI)</th>
+					<td><input type="number" id="DPI" name="DPI" value="300"/></td>
+				</tr>
+				<tr>
+					<th>Left Margin</th>
+					<td><input type="number" id="leftMargin" name="leftMargin" value="1"/> cm</td>
+				</tr>
+				<tr>
+					<th>Right Margin</th>
+					<td><input type="number" id="rightMargin" name="rightMargin" value="1"/> cm</td>
+				</tr>
+				<tr>
+					<th>Top Margin</th>
+					<td><input type="number" id="topMargin" name="topMargin" value="1"/> cm</td>
+				</tr>
+				<tr>
+					<th>Bottom Margin</th>
+					<td><input type="number" id="bottomMargin" name="bottomMargin" value="1"/> cm</td>
+				</tr>
+				<tr>
+					<th>Reduction factor</th>
+					<td><input type="number" id="reductionFactor" name="reductionFactor" value="1"/> If the original image is too large, you will need to reduce it.</td>
+				</tr>
+				<tr>
+					<th>Image File</th>
+					<td><input type="file" id="fileInput" accept="image/*"></td>
+				</tr>
+			</table>
+			<button type="button" onclick="preview()">Generate Preview</button>
+		</div>
+
+		<div id="busy" style="display:none">
+			<p>Generating preview
+			<div class="loader"></div>
+		</div>
+		<div id="preview" style="display: table;"/>
+	</body>
+</html>
